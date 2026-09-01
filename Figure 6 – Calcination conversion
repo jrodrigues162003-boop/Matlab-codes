@@ -1,0 +1,74 @@
+%% Figure 6 – Calcination conversion
+clear; clc; close all;
+
+y = 0.6148;
+tau = 600;
+dp = 200;
+Xcarb = 0.38;
+Tdsn = 931.7;
+Torg = 899.24;
+
+T = linspace(875,970,400);
+X1 = arrayfun(@(T)Xli(T,y,tau,dp),T);
+X2 = arrayfun(@(T)Xgc(T,y,tau,Xcarb),T);
+
+figure('Position',[120 120 640 460],'Color','w');
+plot(T,X1,'-','Color',[0.58 0.04 0.13],'LineWidth',1.6); hold on
+plot(T,X2,'--','Color',[0 0.45 0.74],'LineWidth',1.6);
+yline(0.90,'k:');
+xline(Tdsn,'k-');
+xline(Torg,'k-.');
+
+plot(Tdsn,Xli(Tdsn,y,tau,dp),'o','MarkerFaceColor',[0.58 0.04 0.13],...
+    'MarkerEdgeColor','k');
+plot(Tdsn,Xgc(Tdsn,y,tau,Xcarb),'s','MarkerFaceColor',[0 0.45 0.74],...
+    'MarkerEdgeColor','k');
+
+xlabel('Calciner temperature [\circC]');
+ylabel('Calcination conversion, X_{calc}');
+legend('Liang et al.','Greco-Coppi et al.','Location','southeast',...
+    'Box','off');
+xlim([875 970]);
+ylim([0 1.02]);
+grid on; box on;
+
+print(gcf,'Fig6_calcination_temperature','-dpng','-r300');
+
+fprintf('T[C]     Liang   Greco-C\n');
+for T = [880 890 899.24 910 920 931.7 940 950 960]
+    fprintf('%7.1f  %6.3f  %6.3f\n',T,...
+        Xli(T,y,tau,dp),Xgc(T,y,tau,Xcarb));
+end
+
+
+function X = Xli(Tc,y,tau,dp)
+T = Tc+273.15;
+Pe = exp(17.74-0.00108*T+0.332*log(T)-22020/T);
+u = (100/2700)*4e-4*exp(-4350/T)*max(Pe-y,0);
+
+if u<=0, X=0; return; end
+a = (dp/2e6)/u/tau;
+if a<0.01, X=1; return; end
+
+e = exp(-a);
+I = (1-e)-(3/a)*(1-(1+a)*e)+(3/a^2)*(2-(a^2+2*a+2)*e)...
+    -(1/a^3)*(6-(a^3+3*a^2+6*a+6)*e);
+X = min(max(1-I,0),1);
+end
+
+function X = Xgc(Tc,y,tau,Xcarb)
+T = Tc+273.15;
+Ru = 8.314;
+p = y*101325;
+Pe = 4.137e12*exp(-20474/T);
+kc = 1.84e4*exp(-118000/(Ru*T));
+c = 4.72e-7*exp(89000/(Ru*T));
+h = (1-c*sqrt(p))*(1-p/Pe);
+
+if h<=0 || p>=Pe, X=0; return; end
+
+tc = 3*Xcarb/(h*kc);
+a = tc/tau;
+r = 1/a;
+X = min(max(6*(1-exp(-a))*r^3-6*r^2+3*r,0),1);
+end
