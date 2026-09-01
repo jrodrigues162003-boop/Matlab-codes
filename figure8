@@ -1,0 +1,56 @@
+% Figure 8.
+clear; clc; close all;
+
+R  = 8.314;  S0 = 104;                         
+T_calc = 931.7;  tau_min = 10;
+h_AA = 49.1;                               
+alpha = (3.693e-5 - 1.699e-5)/3.693e-5;
+Tk = T_calc + 273.15;
+Kc = exp(-11660/Tk + 6.25);                    
+P_design = 38.5;                                
+
+Pk   = linspace(0.1, 60, 300);                  
+Peq  = exp(17.74 - 0.00108*Tk + 0.332*log(Tk) - 22020/Tk);   
+yCO2 = (101.325 - Pk)/101.325;
+drive = max(Peq - yCO2, 0);                    
+
+Aq = 2.57e6*exp(-178341/(R*Tk));               
+Bq = 3.31e10*exp(-228565/(R*Tk));
+K3 = 3.56e-10*exp(168929/(R*Tk));         
+th  = K3*(Pk/1000)./(1 + K3*(Pk/1000));
+kin = (Aq + (Bq-Aq).*th)/Aq;
+
+Sof  = @(P_kPa) S0*(1 - (Kc*tau_min)^(1/gH2O(max(P_kPa,0.1)*1000)));
+Sdry = Sof(0.1);
+str  = arrayfun(Sof, Pk)/Sdry;
+
+fn = 'Times New Roman';  fs = 9;
+fig = figure('Units','centimeters','Position',[2 2 8.4 6.8],'Color','w', ...
+    'PaperPositionMode','auto');
+ax = axes('FontName',fn,'FontSize',fs,'Box','on','Layer','top'); hold(ax,'on');
+yyaxis(ax,'left');
+plot(ax,Pk,drive,'LineWidth',1.8);
+ylabel(ax,'Driving force p_{eq} - p_{CO_2} (atm)','FontName',fn,'FontSize',fs);
+yyaxis(ax,'right');
+plot(ax,Pk,kin,'LineWidth',1.8); hold on;
+plot(ax,Pk,str,'LineWidth',1.8);
+yline(ax,1,'k--','LineWidth',0.7);
+ylabel(ax,'Relative to a dry calciner','FontName',fn,'FontSize',fs);
+ylim(ax,[0 1.6]);
+xline(ax,P_design,'k:','LineWidth',0.9);
+text(ax,P_design+1.5,0.15,'design','FontName',fn,'FontSize',fs-1.5,'Rotation',90);
+xlabel(ax,'Steam partial pressure (kPa)','FontName',fn,'FontSize',fs);
+grid(ax,'on');
+legend(ax,{'driving force','rate catalysis','surface area'}, ...
+    'Location','northwest','FontName',fn,'FontSize',fs-1.5,'Box','off');
+exportgraphics(fig,'Fig8_steam_effects.png','Resolution',300);
+
+i0 = 1;  iD = find(Pk >= P_design,1);
+fprintf('at %.1f kPa steam, %.1f C:\n', P_design, T_calc);
+fprintf('  driving force %.3f atm  (hypothetical dry %.3f atm)\n', drive(iD), max(Peq-1.0,0));
+fprintf('  rate catalysis x %.2f\n', kin(iD));
+fprintf('  surface area   x %.2f of dry\n', str(iD));
+
+function g = gH2O(P_Pa)     
+g = 1.731*log(P_Pa) - 3.290;
+end
