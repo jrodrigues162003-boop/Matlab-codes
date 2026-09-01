@@ -1,0 +1,90 @@
+% Figure 9. Maximum conversion against cycle number for the four cases of
+% Benitez-Guerrero et al. [16], showing the crossover between shear-only
+% and combined milling. Feeds Table 10.
+clear; clc; close all;
+
+nCO2 = 98.00;  E_targ = 0.90;  F_R = 15788.5;
+X_calc = 0.9616;                               % Aspen value, held fixed
+M_CaO = 56.077;  M_CaCO3 = 100.09;
+h_AA = 49.1;  VM_CaCO3 = 3.693e-5;  VM_CaO = 1.699e-5;
+alpha = (VM_CaCO3-VM_CaO)/VM_CaCO3;  d_thr = 2*h_AA*sqrt(alpha);
+N_Ca = F_R/M_CaO;  Nmax = 400;  X1 = 0.70;     % X1 from [GA], declared
+N_ref = [1 2 3 5 7 10 15 20 30 50];
+d_ref = [65.1 77.5 84.2 97.0 103.9 114.8 126.4 134.5 151.5 169.0];
+Nv = (1:Nmax)';
+d_unm = interp1(N_ref,d_ref,min(Nv,max(N_ref)),'linear','extrap');
+S_unm = 10.2;                                  % m2/g [BG] Table 1
+
+cases = { ...
+    'Unmilled',        0.549, 0.077, 10.2;
+    'Impact only',     0.521, 0.072, 13.7;
+    'Shear only',      0.228, 0.044,  5.9;
+    'Impact and shear',0.427, 0.093, 18.7};
+nC = size(cases,1);
+R = struct();
+for i = 1:nC
+    k = cases{i,2};  Xr = cases{i,3};  Scao = cases{i,4};
+    F0 = fzero(@(F) capture(F,k,Xr,X1,N_Ca,F_R,X_calc,Nmax,nCO2,M_CaCO3)-E_targ,[50 3e5]);
+    x = F0/(F0+F_R);
+    r = x*(1-x).^(Nv-1);  r = r/sum(r);
+    dN = d_unm*(S_unm/Scao);
+    R(i).name = cases{i,1};  R(i).k = k;  R(i).Xr = Xr;  R(i).S = Scao;
+    R(i).F0 = F0;  R(i).Xave = XaveOf(x,k,Xr,X1,Nmax);  R(i).cycles = 1/x;
+    R(i).dbar = sum(r.*dN);
+    R(i).acc  = sum(r.*arrayfun(@(d) openFrac(d,h_AA,alpha), dN));
+end
+
+fprintf('MILLING at %.0f%% capture, %.2f kmol/hr CO2, F_R %.1f kg/hr\n', ...
+    100*E_targ, nCO2, F_R);
+fprintf('%-18s %6s %6s %7s %8s %9s %8s %7s %7s %7s\n', ...
+    'case','k','X_r','S m2/g','X_ave','F0 kg/hr','vs unm','cycles','d nm','open%');
+for i = 1:nC
+    fprintf('%-18s %6.3f %6.3f %7.1f %8.4f %9.0f %+7.1f%% %7.1f %7.0f %7.1f\n', ...
+        R(i).name, R(i).k, R(i).Xr, R(i).S, R(i).Xave, R(i).F0, ...
+        100*(R(i).F0/R(1).F0-1), R(i).cycles, R(i).dbar, 100*R(i).acc);
+end
+
+Nplot = (1:50)';
+fn = 'Times New Roman';
+fig = figure('Units','centimeters','Position',[2 2 8.4 6.8],'Color','w', ...
+    'PaperPositionMode','auto');
+ax = axes('FontName',fn,'FontSize',9,'Box','on','Layer','top'); hold(ax,'on');
+sty = {'-','--',':','-.'};
+for i = 1:nC
+    plot(ax,Nplot,XN_BG(Nplot,R(i).k,R(i).Xr,X1),sty{i},'LineWidth',1.5, ...
+        'DisplayName',R(i).name);
+end
+xlabel(ax,'Cycle number, {\itN}','FontName',fn,'FontSize',9);
+ylabel(ax,'Maximum conversion, {\itX_N}','FontName',fn,'FontSize',9);
+grid(ax,'on');
+legend(ax,'Location','northeast','FontName',fn,'FontSize',7.5,'Box','off');
+exportgraphics(fig,'Fig9_milling_decay.png','Resolution',300);
+
+function X = XN_BG(N,k,Xr,X1)                  % [BG] eqn 3
+X = Xr + X1./(k*(N-1) + 1/(1-Xr/X1));
+end
+function Xa = XaveOf(x,k,Xr,X1,Nmax)
+N = (1:Nmax)';  r = x*(1-x).^(N-1);        % [R10]
+Xa = sum(r.*XN_BG(N,k,Xr,X1))/sum(r);
+end
+function E = capture(F0,k,Xr,X1,N_Ca,F_R,X_calc,Nmax,nCO2,M_CaCO3)
+F0m = F0/M_CaCO3;
+Xa  = XaveOf(F0/(F0+F_R),k,Xr,X1,Nmax);
+pf  = F0m/(N_Ca+F0m);
+a = N_Ca;  b = 0;
+for i = 1:3000
+    cap = min(a*Xa,0.9999*nCO2);
+    tot = b + cap + F0m;
+    an = (1-pf)*((a-cap)+X_calc*tot);
+    bn = (1-pf)*(1-X_calc)*tot;
+    if abs(an-a)<1e-13 && abs(bn-b)<1e-13, a=an; b=bn; break; end
+    a = an;  b = bn;
+end
+E = min(a*Xa,0.9999*nCO2)/nCO2;
+end
+function f = openFrac(dnm,h,alpha)             % [AA]
+Rr = dnm/2;  disc = h^2*alpha^2+Rr^2-alpha*h^2;
+if disc <= 0, f = 0; return; end
+d = min(h*alpha+Rr-sqrt(disc),Rr);
+f = ((Rr-d)/Rr)^2;
+end
