@@ -1,0 +1,54 @@
+% Figure 9 – pore filling
+clear; clc; close all;
+
+h=49.1;
+VMc=3.693e-5; VMo=1.699e-5;
+alpha=(VMc-VMo)/VMc;
+dthr=2*h*sqrt(alpha);
+d=linspace(20,300,400);
+de=arrayfun(@(x)delta(x/2,h,alpha),d);
+op=arrayfun(@(x)openFrac(x/2,h,alpha),d);
+
+fig=figure('Position',[120 120 640 460],'Color','w');
+yyaxis left
+plot(d,de,'LineWidth',1.6);
+ylabel('Layer thickness \delta (nm)');
+ylim([0 60]);
+
+yyaxis right
+plot(d,100*op,'LineWidth',1.6);
+ylabel('Open pore area (%)');
+ylim([0 70]);
+
+xline(dthr,'k--');
+text(dthr+6,63,sprintf('%.1f nm',dthr));
+xlabel('Pore diameter (nm)');
+grid on; box on;
+
+exportgraphics(fig,'Fig7_pore_filling.png','Resolution',300);
+
+fprintf('alpha %.3f   h %.1f nm   threshold %.1f nm\n',alpha,h,dthr);
+fprintf(' d(nm)  delta(nm)  open(%%)\n');
+
+for dd=[50 60 72.2 80 100 140 200 300]
+    fprintf('%6.1f %10.1f %9.1f\n',dd,...
+        delta(dd/2,h,alpha),100*openFrac(dd/2,h,alpha));
+end
+
+function de=delta(R,h,alpha)
+disc=h^2*alpha^2+R^2-alpha*h^2;
+if disc<=0
+    de=R;
+else
+    de=min(h*alpha+R-sqrt(disc),R);
+end
+end
+
+function f=openFrac(R,h,alpha)
+de=delta(R,h,alpha);
+if de>=R
+    f=0;
+else
+    f=((R-de)/R)^2;
+end
+end
