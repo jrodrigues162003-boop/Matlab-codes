@@ -1,0 +1,159 @@
+% Loop with computed calciner atmosphere - Table 6 duty, y_CO2, DF
+clear; clc;
+
+comp = {'CO2','H2','CO','CH4','N2','H2O','O2','CaO','CaCO3'};
+MW   = [44.0095 2.016 28.01 16.043 28.014 18.0153 31.999 56.077 100.09];
+nc = numel(comp);
+iCO2=1; iH2=2; iCO=3; iCH4=4; iN2=5; iH2O=6; iO2=7; iCaO=8; iCaCO3=9;
+
+gas_in       = zeros(1,nc);
+gas_in(iCO2) = 98.00;
+
+E_target = 0.90;
+F_R      = 15788.5;
+T_carb   = 650;
+T_calc   = 931.7;          % converged design point
+P_tot    = 1.0;
+tau      = 600;  dp = 200;
+T_fuel   = 25;   T_makeup = 25;
+excessO2 = 0.03;
+k_dec = 0.52;  Xr = 0.075;  Nmax = 400;     % [GA] Table 1
+dH_calc  = 178.4;                            % kJ/mol [FH]
+LHV_CH4  = 802.6;                            % kJ/mol, from formation enthalpies
+kinModel = 'GC';
+fk       = 1.00;
+
+N_Ca = F_R/MW(iCaO);
+obj = @(F0) capOf(F0,N_Ca,gas_in(iCO2),F_R,MW,T_carb,T_calc,T_fuel,T_makeup, ...
+      P_tot,tau,dp,k_dec,Xr,Nmax,dH_calc,LHV_CH4,fk,excessO2,kinModel) - E_target;
+F0 = fzero(obj,[10 60000]);
+[E,R] = capOf(F0,N_Ca,gas_in(iCO2),F_R,MW,T_carb,T_calc,T_fuel,T_makeup, ...
+      P_tot,tau,dp,k_dec,Xr,Nmax,dH_calc,LHV_CH4,fk,excessO2,kinModel);
+
+fprintf('y_CO2 wet %.4f   dry %.4f   Peq %.4f atm   DF %.3f\n', ...
+        R.y, R.ydry, R.Peq, R.Peq/(R.y*P_tot));
+fprintf('X_calc %.4f   X_ave %.4f   capture %.2f %%\n', R.Xcal, R.Xave, 100*E);
+fprintf('CH4 %.3f kmol/hr (%.1f kg/hr)   O2 %.3f kmol/hr (%.1f kg/hr)\n', ...
+        R.nCH4, R.nCH4*MW(iCH4), R.nO2, R.nO2*MW(iO2));
+fprintf('off-gas: CO2 %.2f  H2O %.2f  O2 %.2f kmol/hr\n', ...
+        R.rel+R.nCH4, 2*R.nCH4, R.nO2-2*R.nCH4);
+fprintf('duty: rxn %.3f  solids %.3f  makeup %.3f  CO2 %.3f  comb %.3f  TOTAL %.3f MW\n', ...
+        R.Qrxn, R.Qsol, R.Qmk, R.QCO2rel, R.Qcomb, R.Qtot);
+fprintf('specific duty %.3f GJ per tonne CO2 released\n', ...
+        R.Qtot*3600/(R.rel*MW(iCO2)));
+fprintf('F0 %.1f kg/hr (%.3f kmol/hr)   purge %.1f kg/hr   Ca/C %.3f\n', ...
+        F0, F0/MW(iCaCO3), R.purgeKg, N_Ca/gas_in(iCO2));
+fprintf('F0/F_CO2 %.4f   criterion %.4f\n', ...
+        (F0/MW(iCaCO3))/gas_in(iCO2), N_Ca*R.Xave/gas_in(iCO2));
+
+Ca_in = F0/MW(iCaCO3);  Ca_out = R.pf*(R.CaOout+R.CaCO3out);
+fprintf('Ca balance: in %.4f  out %.4f  err %.2e\n', Ca_in, Ca_out, abs(Ca_in-Ca_out));
+
+function [E,R] = capOf(F0,N_Ca,nCO2f,F_R,MW,T_carb,T_calc,T_fuel,T_mk, ...
+                       P_tot,tau,dp,k,Xr,Nmax,dH,LHV,fk,exO2,kinModel)
+    R.Xave = Xave(F0/(F0+F_R),k,Xr,Nmax);
+    F0m = F0/MW(9);
+    R.pf = F0m/(N_Ca + F0m);
+    R.Peq = PeLi(T_calc+273.15);
+    y = 0.65;  a = N_Ca; b = 0;  cap = 0.9*nCO2f;  converged = false;
+    for outer = 1:400
+        if strcmp(kinModel,'GC')
+            Xcarb_now = (b + cap + F0m)/(N_Ca + F0m);
+            R.Xcal = XcalcGC(T_calc,y,P_tot,tau,max(Xcarb_now,1e-4));
+        else
+            R.Xcal = XcalcLi(T_calc,y,P_tot,dp,tau,fk);
+        end
+        for i = 1:2000
+            cap = min(a*R.Xave, 0.9999*nCO2f);
+            calcIn = b + cap + F0m;
+            an = (1-R.pf)*((a-cap) + R.Xcal*calcIn);
+            bn = (1-R.pf)*(1-R.Xcal)*calcIn;
+            if abs(an-a)<1e-13 && abs(bn-b)<1e-13, a=an; b=bn; break; end
+            a = an; b = bn;
+        end
+        cap = min(a*R.Xave, 0.9999*nCO2f);
+        calcIn = b + cap + F0m;
+        rel = R.Xcal*calcIn;
+        Qrxn = rel*dH/3600;
+        Qsol = Qsens(T_carb,T_calc,a-cap,b+cap);
+        Qmk  = Qsens(T_mk,T_calc,0,F0m);
+        hCO2 = HgasCO2(T_calc)-HgasCO2(T_fuel);
+        hH2O = HgasH2O(T_calc)-HgasH2O(T_fuel);
+        hO2  = HgasO2(T_calc)-HgasO2(T_fuel);
+        QCO2rel = rel*hCO2/3600;
+        nCH4 = (Qrxn+Qsol+Qmk+QCO2rel)*3600/(LHV-hCO2-2*hH2O-2*exO2*hO2);
+        ngas = rel + nCH4 + 2*nCH4 + exO2*2*nCH4;
+        ynew = (rel+nCH4)/ngas;
+        if abs(ynew-y) < 1e-10, y = ynew; converged = true; break; end
+        y = 0.9*y + 0.1*ynew;
+    end
+    if ~converged
+        error('Atmosphere loop not converged; operating point on saturation boundary.');
+    end
+    R.y=y; R.a=a; R.b=b; R.cap=cap; R.rel=rel; R.nCH4=nCH4;
+    R.nO2=2*nCH4*(1+exO2); R.ngas=ngas;
+    R.ydry=(rel+nCH4)/(rel+nCH4+exO2*2*nCH4);
+    R.Qrxn=Qrxn; R.Qsol=Qsol; R.Qmk=Qmk; R.QCO2rel=QCO2rel;
+    R.Qcomb=nCH4*(hCO2+2*hH2O+2*exO2*hO2)/3600;
+    R.Qtot=Qrxn+Qsol+Qmk+QCO2rel+R.Qcomb;
+    R.CaOout=(a-cap)+R.Xcal*calcIn;
+    R.CaCO3out=(1-R.Xcal)*calcIn;
+    R.purgeKg=R.pf*(R.CaOout*MW(8)+R.CaCO3out*MW(9));
+    E = cap/nCO2f;
+end
+function Xa = Xave(x,k,Xr,Nmax)
+    N=(1:Nmax)'; XN=1./(1/(1-Xr)+k*N)+Xr; r=x*(1-x).^(N-1);
+    Xa=sum(r.*XN)/sum(r);
+end
+function P = PeLi(T)
+    P = exp(17.74 - 0.00108*T + 0.332*log(T) - 22020/T);     % atm [Li]
+end
+function [X,DF,tc] = XcalcGC(Tc,y,Ptot,tau,Xcarb)
+    Ru=8.314; T=Tc+273.15;
+    p=y*Ptot*101325;  p_eq=4.137e12*exp(-20474/T);           % Pa
+    DF=p_eq/max(p,1);
+    kc=1.84e4*exp(-118000/(Ru*T));  c=4.72e-7*exp(89000/(Ru*T));
+    h=(1-c*sqrt(p))*(1-p/p_eq);
+    if h<=0 || p>=p_eq, X=0; tc=Inf; return; end
+    tc=3*Xcarb/(h*kc);
+    a=tc/tau; r=1/a; fa=1-exp(-a);
+    X=min(max(6*fa*r^3-6*r^2+3*r,0),1);
+end
+function X = XcalcLi(Tc,y,Ptot,dp_um,tau,fk)
+    T=Tc+273.15;
+    u=(100/2700)*fk*4.0e-4*exp(-4350/T)*max(PeLi(T)-y*Ptot,0);
+    if u<=0, X=0; return; end
+    a=(dp_um/2*1e-6)/u/tau;
+    if a<0.01, X=1; return; end
+    e=exp(-a);
+    I=(1-e)-(3/a)*(1-(1+a)*e)+(3/a^2)*(2-(a^2+2*a+2)*e) ...
+      -(1/a^3)*(6-(a^3+3*a^2+6*a+6)*e);
+    X=min(max(1-I,0),1);
+end
+function cp = CpCaO(T)
+    t=T/1000;
+    cp=49.95403+4.887916*t-0.352056*t^2+0.046187*t^3-0.825097/t^2;  % [N1]
+end
+function cp = CpCaCO3(T)
+    cp=82.34+4.975e-2*T-12.87e5/T^2;                                 % [FR]
+end
+function H = HgasCO2(Tc)
+    t=(Tc+273.15)/1000;
+    H=24.99735*t+55.18696*t^2/2-33.69137*t^3/3+7.948387*t^4/4 ...
+      +0.136638/t-403.6075+393.5224;                                 % [N1]
+end
+function H = HgasO2(Tc)
+    t=(Tc+273.15)/1000;
+    H=30.03235*t+8.772972*t^2/2-3.988133*t^3/3+0.788313*t^4/4 ...
+      +0.741599/t-11.32468;                                          % [N1]
+end
+function H = HgasH2O(Tc)
+    t=(Tc+273.15)/1000;
+    H=30.09200*t+6.832514*t^2/2+6.793435*t^3/3-2.534480*t^4/4 ...
+      -0.082139/t-250.8810+241.8264;                                 % [N1]
+end
+function Q = Qsens(Tc_in,Tc_out,nCaO,nCaCO3)
+    Ti=Tc_in+273.15; Tf=Tc_out+273.15;
+    Q=(integral(@(T)arrayfun(@CpCaO,T),Ti,Tf)*nCaO + ...
+       integral(@(T)arrayfun(@CpCaCO3,T),Ti,Tf)*nCaCO3)/3.6e6;
+end
