@@ -1,0 +1,44 @@
+%% Figure 2 – Gasifier validation
+
+clear; clc; close all;
+
+% H2   CO   CO2   CH4
+
+data = [55.6 21.1 18.0 4.9;
+    56.4 21.2 17.7 4.3;
+    45.5 23.8 18.8 8.0;
+    42.1 26.8 21.2 9.8;
+    42.1 26.3 21.1 10.5;
+    57.5 25.8 16.8 0.012];
+
+labels = {'This work, Aspen (bark)','This work, MATLAB (bark)',...
+    'Wilk et al. (bark)','Nicolucci (poplar)',...
+    'Gussing (wood chips)','Eikeland Gibbs (birch)'};
+
+figure('Position',[80 80 920 440]);
+
+b = bar(data','grouped');
+
+b = bar(data','grouped');
+
+col = {[0.20 0.45 0.70],   % blue
+       [0.85 0.45 0.20],   % orange
+       [0.40 0.40 0.40],   % grey
+       [0.30 0.60 0.40],   % green
+       [0.55 0.35 0.65],   % purple
+       [0.75 0.65 0.25]};  % gold
+
+for i = 1:6
+    b(i).FaceColor = col{i};
+end
+
+for i = 1:6
+    b(i).FaceColor = col{i};
+end
+
+set(gca,'XTickLabel',{'H_2','CO','CO_2','CH_4'},'FontSize',11);
+ylabel('Dry gas composition (mol%)');
+ylim([0 62]);
+grid on; box on;
+
+legend(labels,'Location','northeastoutside','Box','off');
