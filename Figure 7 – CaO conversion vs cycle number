@@ -1,0 +1,62 @@
+%% Figure 7 – CaO conversion vs cycle number
+clear; clc; close all;
+
+XN = @(N,Xr,k) 1./(1/(1-Xr)+k.*N)+Xr;
+
+Xr_base = 0.075; k_base = 0.52;
+Xr_sev = 0.075; k_sev = 1.00;
+
+FR = 15788.5; F0 = 1518.9;
+x = F0/(F0+FR);
+Nbar = 1/x;
+
+Nv = (1:400)';
+r = x*(1-x).^(Nv-1);
+r = r/sum(r);
+
+Xave_base = sum(r.*XN(Nv,Xr_base,k_base));
+Xave_sev = sum(r.*XN(Nv,Xr_sev,k_sev));
+
+N = 1:100;
+Xhi = XN(N,Xr_base,k_base);
+Xlo = XN(N,Xr_sev,k_sev);
+
+figure('Position',[120 120 640 460],'Color','w');
+
+fill([N fliplr(N)],[Xhi fliplr(Xlo)],[0.86 0.86 0.86],...
+    'EdgeColor','none','FaceAlpha',0.8);
+hold on
+plot(N,Xhi,'k-','LineWidth',1.4);
+plot(N,Xlo,'k:','LineWidth',1.1);
+yline(Xr_base,'k--','LineWidth',0.7);
+
+scale = 0.16/max(r(1:100));
+area(N,r(1:100)'*scale,'FaceColor',[0 0.45 0.74],...
+    'FaceAlpha',0.18,'EdgeColor','none');
+
+yline(Xave_base,'-','Color',[0.85 0.33 0.10],'LineWidth',1.2);
+plot(Nbar,XN(Nbar,Xr_base,k_base),'o','MarkerSize',5.5,...
+    'MarkerEdgeColor','k','MarkerFaceColor',[0.85 0.33 0.10]);
+
+text(34,0.375,sprintf('X_{ave} = %.3f',Xave_base),...
+    'FontSize',8,'Color',[0.85 0.33 0.10]);
+text(12,0.055,sprintf('bed age distribution,\nmean %.1f cycles',Nbar),...
+    'FontSize',7.5,'Color',[0 0.35 0.60]);
+
+xlabel('Number of carbonation/calcination cycles, N');
+ylabel('Maximum conversion, X_N');
+xlim([0 100]);
+ylim([0 0.75]);
+set(gca,'XTick',0:20:100,'YTick',0:0.15:0.75,...
+    'XMinorTick','on','YMinorTick','on');
+grid on; box on
+
+exportgraphics(gcf,'Fig7_sorbent_decay.png','Resolution',300);
+
+fprintf('x = %.4f   mean bed age = %.1f cycles\n',x,Nbar);
+fprintf('Xave base %.3f   severe %.3f   spread %.0f%%\n',...
+    Xave_base,Xave_sev,100*(Xave_base-Xave_sev)/Xave_base);
+fprintf('at mean age %.3f   diff %.0f%%   first-3-cycle fraction %.0f%%\n',...
+    XN(Nbar,Xr_base,k_base),...
+    100*(Xave_base-XN(Nbar,Xr_base,k_base))/XN(Nbar,Xr_base,k_base),...
+    100*sum(r(1:3)));
