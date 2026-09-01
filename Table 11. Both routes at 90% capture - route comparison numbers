@@ -1,0 +1,52 @@
+% Table 11. Both routes at 90% capture - route comparison numbers.
+clear; clc;
+
+nCO2 = 98.00;  E_targ = 0.90;  F_R = 15788.5;
+X_calc = 0.9616;  M_CaO = 56.077;  M_CaCO3 = 100.09;
+N_Ca = F_R/M_CaO;  Nmax = 400;  X1 = 0.70;
+
+routes = { ...
+ 'Base, no route',       0.520, 0.075, 1.000;
+ 'Steam +30',            0.520, 0.075, 0.994;
+ 'Steam +60',            0.520, 0.075, 0.991;
+ 'Steam +120',           0.520, 0.075, 0.985;
+ 'Milling impact',       0.521, 0.072, 1.000;
+ 'Milling shear',        0.228, 0.044, 1.000;
+ 'Milling impact+shear', 0.427, 0.093, 1.000};
+nR = size(routes,1);
+
+fprintf('ROUTES at %.0f%% capture, %.2f kmol/hr CO2, F_R %.1f, X_calc %.4f\n', ...
+        100*E_targ, nCO2, F_R, X_calc);
+fprintf('%-22s %6s %6s %8s %9s %8s %7s\n','route','k','X_r','X_ave','F0kg/hr','vs base','cycles');
+F0v = nan(nR,1);
+for i = 1:nR
+    k = routes{i,2};  Xr = routes{i,3};  sc = routes{i,4};
+    F0v(i) = fzero(@(F) capture(F,k,Xr,X1,sc,N_Ca,F_R,X_calc,Nmax,nCO2,M_CaCO3)-E_targ,[50 3e5]);
+    x = F0v(i)/(F0v(i)+F_R);
+    fprintf('%-22s %6.3f %6.3f %8.4f %9.0f %+7.1f%% %7.1f\n', ...
+        routes{i,1}, k, Xr, XaveOf(x,k,Xr,X1,sc,Nmax), F0v(i), ...
+        100*(F0v(i)/F0v(1)-1), 1/x);
+end
+
+function X = XN_BG(N,k,Xr,X1)
+    X = Xr + X1./(k*(N-1) + 1/(1-Xr/X1));
+end
+function Xa = XaveOf(x,k,Xr,X1,sc,Nmax)
+    N = (1:Nmax)';  r = x*(1-x).^(N-1);
+    Xa = sum(r.*XN_BG(N,k,Xr,X1)*sc)/sum(r);
+end
+function E = capture(F0,k,Xr,X1,sc,N_Ca,F_R,X_calc,Nmax,nCO2,M_CaCO3)
+    F0m = F0/M_CaCO3;
+    Xa  = XaveOf(F0/(F0+F_R),k,Xr,X1,sc,Nmax);
+    pf  = F0m/(N_Ca+F0m);
+    a = N_Ca;  b = 0;
+    for i = 1:3000
+        cap = min(a*Xa,0.9999*nCO2);
+        tot = b + cap + F0m;
+        an = (1-pf)*((a-cap)+X_calc*tot);
+        bn = (1-pf)*(1-X_calc)*tot;
+        if abs(an-a)<1e-13 && abs(bn-b)<1e-13, a=an; b=bn; break; end
+        a = an;  b = bn;
+    end
+    E = min(a*Xa,0.9999*nCO2)/nCO2;
+end
